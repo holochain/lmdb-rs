@@ -70,15 +70,6 @@ pub trait Cursor<'txn> {
         Iter::new(self.cursor(), ffi::MDB_FIRST, ffi::MDB_NEXT)
     }
 
-    /// Iterate over database items starting from the beginning of the database.
-    ///
-    /// For databases with duplicate data items (`DatabaseFlags::DUP_SORT`), the
-    /// duplicate data items of each key will be returned before moving on to
-    /// the next key.
-    fn iter_end(&mut self) -> Iter<'txn> {
-        Iter::new(self.cursor(), ffi::MDB_LAST, ffi::MDB_PREV)
-    }
-
     /// Iterate over database items starting from the given key.
     ///
     /// For databases with duplicate data items (`DatabaseFlags::DUP_SORT`), the
@@ -131,6 +122,53 @@ pub trait Cursor<'txn> {
             Err(error) => return Iter::Err(error),
         };
         Iter::new(self.cursor(), ffi::MDB_GET_CURRENT, ffi::MDB_NEXT_DUP)
+    }
+
+    /// Iterate over database items in reverse key order. The iterator will begin
+    /// with the next item before the cursor, and continue until the start of the database.
+    /// For new cursors, the iterator will begin with the last item in the database.
+    ///
+    /// For databases with duplicate data items (`DatabaseFlags::DUP_SORT`), the
+    /// duplicate data items of each key will be returned before moving on to
+    /// the next key.
+    fn iter_reverse(&mut self) -> Result<Iter<'txn>> {
+        unsafe {
+            lmdb_result(ffi::mdb_cursor_set(self.cursor(), ptr::null_mut(), ptr::null_mut(), ffi::MDB_LAST, ptr::null_mut()))?;
+        };
+        // self.get(None, None, ffi::MDB_LAST)?;
+        Ok(Iter::new(self.cursor(), ffi::MDB_PREV, ffi::MDB_PREV))
+    }
+
+    /// Iterate over database items starting from the end of the database.
+    ///
+    /// For databases with duplicate data items (`DatabaseFlags::DUP_SORT`), the
+    /// duplicate data items of each key will be returned before moving on to
+    /// the next key.
+    fn iter_reverse_end(&mut self) -> Iter<'txn> {
+        Iter::new(self.cursor(), ffi::MDB_LAST, ffi::MDB_PREV)
+    }
+
+    /// Iterate over database items in reverse order starting from the given key.
+    ///
+    /// For databases with duplicate data items (`DatabaseFlags::DUP_SORT`), the
+    /// duplicate data items of each key will be returned before moving on to
+    /// the next key.
+    fn iter_reverse_from<K>(&mut self, key: K) -> Iter<'txn>
+    where
+        K: AsRef<[u8]>,
+    {
+        match self.get(Some(key.as_ref()), None, ffi::MDB_SET_RANGE) {
+            Ok(_) | Err(Error::NotFound) => (),
+            Err(error) => return Iter::Err(error),
+        };
+        Iter::new(self.cursor(), ffi::MDB_GET_CURRENT, ffi::MDB_PREV)
+    }
+
+    /// Iterate over duplicate database items in reverse order. The iterator will begin with the
+    /// item next after the cursor, and continue until the end of the database.
+    /// Each item will be returned as an iterator of its duplicates.
+    fn iter_reverse_dup(&mut self) -> IterDup<'txn> {
+        IterDup::new(self.cursor(), ffi::MDB_PREV)
     }
 }
 
@@ -517,6 +555,7 @@ mod test {
 
         let items: Vec<(&[u8], &[u8])> =
             vec![(b"key1", b"val1"), (b"key2", b"val2"), (b"key3", b"val3"), (b"key5", b"val5")];
+        let items_reverse: Vec<_> = items.iter().cloned().rev().collect();
 
         {
             let mut txn = env.begin_rw_txn().unwrap();
@@ -533,6 +572,7 @@ mod test {
         // of items of type Result<_, E> into a Result<Vec<_, E>> by specifying
         // the collection type via the turbofish syntax.
         assert_eq!(items, cursor.iter().collect::<Result<Vec<_>>>().unwrap());
+        assert_eq!(items_reverse, cursor.iter_reverse().unwrap().collect::<Result<Vec<_>>>().unwrap());
 
         // Alternately, we can collect it into an appropriately typed variable.
         let retr: Result<Vec<_>> = cursor.iter_start().collect();
