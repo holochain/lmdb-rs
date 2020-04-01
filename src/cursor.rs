@@ -127,7 +127,7 @@ pub trait Cursor<'txn> {
         K: AsRef<[u8]>,
     {
         match self.get(Some(key.as_ref()), None, ffi::MDB_SET) {
-            Ok(_) | Err(Error::NotFound) => (),
+            Ok(_) => (),
             Err(error) => return Iter::Err(error),
         };
         Iter::new(self.cursor(), ffi::MDB_GET_CURRENT, ffi::MDB_NEXT_DUP)
