@@ -1,5 +1,4 @@
 use libc::c_int;
-use std::error::Error as StdError;
 use std::ffi::CStr;
 use std::os::raw::c_char;
 use std::{
@@ -116,17 +115,12 @@ impl Error {
 
 impl fmt::Display for Error {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "{}", self)
-    }
-}
-
-impl StdError for Error {
-    fn description(&self) -> &str {
-        unsafe {
+        let result = unsafe {
             // This is safe since the error messages returned from mdb_strerror are static.
             let err: *const c_char = ffi::mdb_strerror(self.to_err_code()) as *const c_char;
             str::from_utf8_unchecked(CStr::from_ptr(err).to_bytes())
-        }
+        };
+        write!(fmt, "{}", result)
     }
 }
 
